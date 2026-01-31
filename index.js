@@ -17,8 +17,8 @@ await connectCloudinary();
 
 // allow multiple origins
 
-const allowedOrigins = ["http://localhost:5173",
-  "http://localhost:5174"
+const allowedOrigins = ["https://ayubgrocery.vercel.app",
+  "http://localhost:5173"
 ];
 
 //middlewares
