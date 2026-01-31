@@ -14,7 +14,7 @@ import { connectCloudinary } from "./config/cloudinary.js";
 
 const app = express();
 await connectCloudinary();
-
+app.set('trust proxy', 1);
 // allow multiple origins
 
 const allowedOrigins = ["https://ayubgrocery.netlify.app"];
