@@ -1,24 +1,39 @@
 import Product from "../models/product.model.js";
+import cloudinary from "../config/cloudinary.js";
 
 // add product :/api/product/add
 export const addProduct = async (req, res) => {
   try {
     const { name, price, offerPrice, description, category } = req.body;
-    // const image = req.files?.map((file) => `/uploads/${file.filename}`);
-    const image = req.files?.map((file) => file.filename);
+
+    // validation
     if (
       !name ||
       !price ||
       !offerPrice ||
       !description ||
       !category ||
-      !image ||
-      image.length === 0
+      !req.files ||
+      req.files.length === 0
     ) {
       return res.status(400).json({
         success: false,
         message: "All fields including images are required",
       });
+    }
+
+    // upload images to cloudinary
+    const image = [];
+
+    for (const file of req.files) {
+      const result = await cloudinary.uploader.upload(
+        `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
+        {
+          folder: "products",
+        }
+      );
+
+      image.push(result.secure_url);
     }
 
     const product = new Product({
@@ -55,6 +70,7 @@ export const getProducts = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 // get single product :/api/product/id
 export const getProductById = async (req, res) => {
   try {
@@ -65,6 +81,7 @@ export const getProductById = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 // change stock  :/api/product/stock
 export const changeStock = async (req, res) => {
   try {
