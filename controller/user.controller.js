@@ -2,6 +2,9 @@ import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
+// Helper: check if request is from mobile app
+const isMobileRequest = (req) => req.headers["x-mobile-app"] === "true";
+
 // register user: /api/user/register
 export const registerUser = async (req, res) => {
   try {
@@ -26,26 +29,35 @@ export const registerUser = async (req, res) => {
       password: hashedPassword,
     });
     await user.save();
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
 
-    res.cookie("token", token, {
-      httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
-      secure: process.env.NODE_ENV === "production", // Use secure cookies in production
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "Strict", // Prevent CSRF attacks
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // Cookie expiration time (7 days)
-    });
-    res.status(201).json({
-      message: "User registered successfully",
-      success: true,
-      user: {
-        name: user.name,
-        email: user.email,
-      },
-      token,
-    });
+    if (isMobileRequest(req)) {
+      // Mobile app -> send token in JSON (no cookie)
+      res.status(201).json({
+        message: "User registered successfully (mobile)",
+        success: true,
+        user: { name: user.name, email: user.email },
+        token,
+      });
+    } else {
+      // Web -> set cookie
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "Strict",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+      res.status(201).json({
+        message: "User registered successfully",
+        success: true,
+        user: { name: user.name, email: user.email },
+        token,
+      });
+    }
   } catch (error) {
     console.error("Error in registerUser:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -53,7 +65,6 @@ export const registerUser = async (req, res) => {
 };
 
 // login user: /api/user/login
-
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -76,24 +87,34 @@ export const loginUser = async (req, res) => {
         .status(400)
         .json({ message: "Invalid credentials", success: false });
     }
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "Strict",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-    res.status(200).json({
-      message: "Logged in successfull",
-      success: true,
-      user: {
-        name: user.name,
-        email: user.email,
-      },
-    });
+
+    if (isMobileRequest(req)) {
+      // Mobile app -> send token in JSON (no cookie)
+      res.status(200).json({
+        message: "Logged in successfully (mobile)",
+        success: true,
+        user: { name: user.name, email: user.email },
+        token,
+      });
+    } else {
+      // Web -> set cookie 
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "Strict",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+      res.status(200).json({
+        message: "Logged in successfully",
+        success: true,
+        user: { name: user.name, email: user.email },
+      });
+    }
   } catch (error) {
     console.error("Error in loginUser:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -103,7 +124,23 @@ export const loginUser = async (req, res) => {
 // check auth : /api/user/is-auth
 export const checkAuth = async (req, res) => {
   try {
-    const userId = req.user;
+    let userId;
+
+    if (isMobileRequest(req)) {
+      // Mobile app -> token from header
+      const authHeader = req.headers.authorization;
+      if (!authHeader) return res.status(401).json({ message: "Unauthorized" });
+      const token = authHeader.split(" ")[1];
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded.id;
+      } catch {
+        return res.status(401).json({ message: "Invalid token" });
+      }
+    } else {
+      // Web -> cookie
+      userId = req.user;
+    }
 
     const user = await User.findById(userId).select("-password");
     if (!user) {
@@ -111,28 +148,35 @@ export const checkAuth = async (req, res) => {
         .status(404)
         .json({ message: "User not found", success: false });
     }
-    res.status(200).json({
-      success: true,
-      user,
-    });
+    res.status(200).json({ success: true, user });
   } catch (error) {
     console.error("Error in checkAuth:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 // logout user: /api/user/logout
 export const logout = async (req, res) => {
   try {
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "Strict",
-      path: "/",
-    });
-    return res.status(200).json({
-      message: "Logged out successfully",
-      success: true,
-    });
+    if (isMobileRequest(req)) {
+      // Mobile -> no cookie, just return success
+      return res.status(200).json({
+        message: "Logged out successfully (mobile)",
+        success: true,
+      });
+    } else {
+      // Web -> clear cookie 
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "Strict",
+        path: "/",
+      });
+      return res.status(200).json({
+        message: "Logged out successfully",
+        success: true,
+      });
+    }
   } catch (error) {
     console.error("Error in logout:", error);
     res.status(500).json({ message: "Internal server error" });
